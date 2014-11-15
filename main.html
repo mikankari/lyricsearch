@@ -1,0 +1,299 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="description" content="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Untitled</title>
+<style type="text/css">
+
+body{
+	font-family: Meiryo, sans-serif;
+	font-size: 14px;
+}
+label{
+	width: 10%;
+	display: inline-block;
+}
+input{
+	width: 80%;
+}
+a{
+	color: #000080;
+}
+.clearfix:after{
+	content: "";
+	clear: both;
+	display: block;
+}
+.floatleft{
+	float: left;
+	margin: 0px 5px;
+}
+.smalltext{
+	font-size: 12px;
+}
+#lyricdialog{
+	color: #ffffff;
+	background-color: rgba(0, 0, 0, 0.75);
+	padding: 10%;
+	width: 80%;
+	height: 80%;
+	overflow-y: scroll;
+	position: fixed;
+	z-index: 100;
+	left: 0px;
+	top: 0px;
+	display: none;
+}
+#lyricclose_button{
+	margin-bottom: 20px;
+}
+.hitpoint{
+	color: #000000;
+	background-color: #ffcc00;
+}
+
+
+</style>
+<script type="text/javascript" src="tiny_segmenter-0.2.js"></script>
+<script type="text/javascript">
+
+var lyric = {};
+
+lyric.videolist = [];
+lyric.videolist_index = 0;
+lyric.videolist_count = 0;
+lyric.resultlist = [];
+lyric.targets = [];
+lyric.searching = false;
+lyric.segmenter = new TinySegmenter();
+lyric.items = ["spring_input", "summer_input", "autumn_input", "winter_input",
+				"morning_input", "noon_input", "night_input", "late_input",
+				"sunny_input", "cloudy_input", "rainy_input"];
+
+lyric.init = function (){
+	for (var i = 0; i < lyric.items.length; i++) {
+		var item_element = document.getElementById(lyric.items[i]);
+		item_element.value = window.localStorage.getItem(lyric.items[i]);
+	}
+	var search_button = document.getElementById("search_button");
+	search_button.addEventListener("click", lyric.search, false);
+	var lyricclose_button = document.getElementById("lyricclose_button");
+	lyricclose_button.addEventListener("click", lyric.hideLyricDialog, false);
+}
+
+lyric.destroy = function (){
+	for (var i = 0; i < lyric.items.length; i++) {
+		var item_element = document.getElementById(lyric.items[i]);
+		window.localStorage.setItem(lyric.items[i], item_element.value);
+	}
+}
+
+lyric.search = function (){
+	if(lyric.searching){
+		return;
+	}
+	lyric.videolist = [];
+	lyric.videolist_index = 0;
+	lyric.videolist_count = 0;
+	lyric.resultlist = [];
+	lyric.loadFile("xml", "./video/videolist.xml", function (xml){
+		var videos = xml.getElementsByTagName("lyric");
+		for (var i = 1; i < videos.length; i++) {
+			var element = videos.item(i);
+			if(element.childNodes.length != 0){
+				var value = element.childNodes.item(0).nodeValue;
+				lyric.videolist.push(value);
+				lyric.videolist_count++;
+			}
+		}
+		lyric.targets = [];
+		var season_select = document.getElementById("season_select");
+		var season_input = document.getElementById(season_select.options[season_select.selectedIndex].value + "_input");
+		if(season_input != null){
+			var season_array = season_input.value.split("　");
+			lyric.targets = lyric.targets.concat(season_array);
+		}
+console.log(lyric.targets.join(","));
+		var time_select = document.getElementById("time_select");
+		var time_input = document.getElementById(time_select.options[time_select.selectedIndex].value + "_input");
+		if(time_input != null){
+			var time_array = time_input.value.split("　");
+			lyric.targets = lyric.targets.concat(time_array);
+		}
+console.log(lyric.targets.join(","));
+		var weather_select = document.getElementById("weather_select");
+		var weather_input = document.getElementById(weather_select.options[weather_select.selectedIndex].value + "_input");
+		if(weather_input != null){
+			var weather_array = weather_input.value.split("　");
+			lyric.targets = lyric.targets.concat(weather_array);
+		}
+console.log(lyric.targets.join(","));
+		lyric.startLoadLoop();
+	});
+}
+
+lyric.startLoadLoop = function (){
+	var value = lyric.videolist[lyric.videolist_index];
+	// value = encodeURIComponent(value);
+	lyric.loadFile("text", "./video/" + value, function (text){
+		// lyric.videolist[lyric.videolist_index] = text;
+		var segments = lyric.segmenter.segment(text);
+		var hitcount = 0;
+		for (var i = 0; i < segments.length; i++) {
+			for (var j = 0; j < lyric.targets.length; j++) {
+				if(segments[i] === lyric.targets[j]){
+					hitcount++;
+					segments[i] = '<span class="hitpoint">' + segments[i] + '</span>';
+					break;
+				}
+			}
+		}
+		if(hitcount > 0){
+			lyric.resultlist[hitcount + "hit. " + value] = segments.join(" | ");
+		}
+		lyric.videolist_index++;
+		if(lyric.videolist_index < lyric.videolist_count){
+			window.setTimeout(lyric.startLoadLoop, 0);
+			lyric.updateOutput("now searching... " + Math.round(lyric.videolist_index / lyric.videolist_count * 100) + "% done.");
+		}else{
+			window.setTimeout(lyric.finishLoadLoop, 500);
+			lyric.updateOutput("完了しました");
+		}
+	});
+	lyric.searching = true;
+}
+
+lyric.finishLoadLoop = function (){
+	var html = '';
+	html += 'keyword: ' + lyric.targets.join(",") + '<br><br>';
+	for (var i in lyric.resultlist) {
+		html += '<a href="javascript:lyric.showLyricDialog(lyric.resultlist[\'' + i + '\']);">' + i + '</a><br>'
+	}
+	lyric.updateOutput(html);
+	lyric.searching = false;
+}
+
+lyric.loadFile = function (type, file, callback){
+	var loader;
+	if(window.ActiveXObject){
+		if(type === "xml"){
+			loader = new ActiveXObject("Microsoft.XMLDOM");
+			loader.onreadystatechange = function (){
+				if(loader.readyState === 4){
+					if(loader && loader.documentElement){
+						callback(loader);
+					}else{
+						callback(null);
+					}
+				}else{
+					// callback("loading");
+				}
+			}
+			loader.async = true;
+			loader.load(file);
+			return;
+		}else{
+			loader = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+	}else{
+		loader = new XMLHttpRequest();
+	}
+	loader.onreadystatechange = function (){
+		if(loader.readyState === 4){
+			callback(type === "xml" ? loader.responseXML : loader.responseText);
+		}else{
+			// callback("loading");
+		}
+	}
+	loader.open("GET", file, true);
+	try{
+		loader.send(null);
+	}catch(error){}
+}
+
+lyric.updateOutput = function (html){
+	var output = document.getElementById("output");
+	output.innerHTML = html;
+}
+
+lyric.showLyricDialog = function (html){
+	html = html.replace(/\n/g, '<br>');
+	var lyrictext = document.getElementById("lyrictext");
+	lyrictext.innerHTML = html;
+	var lyricdialog = document.getElementById("lyricdialog");
+	lyricdialog.style.display = "block";
+	lyricdialog.focus();
+}
+
+lyric.hideLyricDialog = function (){
+	var lyricdialog = document.getElementById("lyricdialog");
+	lyricdialog.style.display = "none";
+}
+
+window.addEventListener("load", lyric.init, false);
+window.addEventListener("unload", lyric.destroy, false);
+
+</script>
+</head>
+<body>
+<div>季節<span class="smalltext">キーワード設定</span></div>
+<div><label for="spring_input">春</label><input id="spring_input" placeholder="全角スペース　で単語を区切って入力するのです"></div>
+<div><label for="summer_input">夏</label><input id="summer_input"></div>
+<div><label for="autumn_input">秋</label><input id="autumn_input"></div>
+<div><label for="winter_input">冬</label><input id="winter_input"></div>
+<div>時間帯<span class="smalltext">キーワード設定</span></div>
+<div><label for="morning_input">朝</label><input id="morning_input"></div>
+<div><label for="noon_input">昼</label><input id="noon_input"></div>
+<div><label for="night_input">夜</label><input id="night_input"></div>
+<div><label for="late_input">深夜</label><input id="late_input"></div>
+<div>天気<span class="smalltext">キーワード設定</span></div>
+<div><label for="sunny_input">晴れ</label><input id="sunny_input"></div>
+<div><label for="cloudy_input">曇り</label><input id="cloudy_input"></div>
+<div><label for="rainy_input">雨</label><input id="rainy_input"></div>
+<hr>
+<div class="clearfix">
+	<div class="floatleft">
+		<div>季節<span class="smalltext">で選ぶ</span></div>
+		<div><select id="season_select">
+			<option value="none">指定なし</option>
+			<option value="spring">春</option>
+			<option value="summer">夏</option>
+			<option value="autumn">秋</option>
+			<option value="winter">冬</option>
+		</select></div>
+	</div>
+	<div class="floatleft">
+		<div>時間帯<span class="smalltext">で選ぶ</span></div>
+		<div><select id="time_select">
+			<option value="none">指定なし</option>
+			<option value="morning">朝</option>
+			<option value="noon">昼</option>
+			<option value="night">夜</option>
+			<option value="late">深夜</option>
+		</select></div>
+	</div>
+	<div class="floatleft">
+		<div>天気<span class="smalltext">で選ぶ</span></div>
+		<div><select id="weather_select">
+			<option value="none">指定なし</option>
+			<option value="sunny">晴れ</option>
+			<option value="cloudy">曇り</option>
+			<option value="rainy">雨</option>
+		</select></div>
+	</div>
+	<div class="floatleft">
+		<div>　</div>
+		<div><button id="search_button">検索</button></div>
+	</div>
+</div>
+<hr>
+<div id="output"></div>
+<div id="lyricdialog">
+	<div><button id="lyricclose_button">閉じる</button></div>
+	<div id="lyrictext"></div>
+</div>
+
+</body>
+</html>
